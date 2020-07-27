@@ -2,62 +2,58 @@
 using System.IO;
 using System.Diagnostics;
 using System.IO.Compression;
+using BenchmarkDotNet.Attributes;
+using BenchmarkDotNet.Jobs;
+using System.Collections.Generic;
+using BenchmarkDotNet.Running;
+using BenchmarkDotNet.Configs;
 
 namespace PruningRadixTrie.Benchmark
 {
-
-    class Program
+    // Add this attribute to compare runtime of .NET472 and .NET Core 3.1 (roughly 20% faster on .NET Core)
+    // [SimpleJob(RuntimeMoniker.Net472)]
+    [SimpleJob(RuntimeMoniker.NetCoreApp31)]
+    [RPlotExporter]
+    [HtmlExporter]
+    [CsvMeasurementsExporter]
+    [MarkdownExporterAttribute.GitHub]
+    public class RegularRadixTrieVsPrefixTrie
     {
-        public static void Benchmark()
+        private PruningRadixTrie termsTestTrie;
+        private string queryString = "microsoft";
+
+        // To run all possible variants of microsoft, use the below.
+        [Params(1, 2, 3, 4, 5, 6, 7, 8, 9)]
+        // To do a quick comparison / graph test, use the below.
+        // [Params(1, 9)]
+        public int SubstringLength;
+
+        [GlobalSetup]
+        public void Setup()
         {
             Console.WriteLine("Load dictionary & create trie ...");
-            PruningRadixTrie pruningRadixTrie = new PruningRadixTrie();
+            termsTestTrie = new PruningRadixTrie();
             if (!File.Exists("terms.txt"))
             {
                 ZipFile.ExtractToDirectory("terms.zip", ".");
             }
-            pruningRadixTrie.ReadTermsFromFile("terms.txt");
-
-            Console.WriteLine("Benchmark started ...");
-            int rounds = 1000;
-            string queryString = "microsoft";
-            for (int i = 0; i < queryString.Length; i++)
-            {
-                //benchmark Ordinary Radix Trie
-                Stopwatch sw = Stopwatch.StartNew();
-                for (int loop = 0; loop < rounds; loop++)
-                {
-                    var results=pruningRadixTrie.GetTopkTermsForPrefix(queryString.Substring(0, i + 1), 10,out long termFrequencyCountPrefix, false);
-                    //foreach ((string term, long termFrequencyCount) in results) Console.WriteLine(term + " " + termFrequencyCount.ToString("N0"));
-                }
-                sw.Stop();
-                long time1 = sw.ElapsedMilliseconds;
-                Console.WriteLine("ordinary search " + queryString.Substring(0, i + 1) + " in " + ((double)time1 / (double)rounds).ToString("N6") + " ms");
-                
-
-                //benchmark Pruning Radix Trie
-                sw = Stopwatch.StartNew();
-                for (int loop = 0; loop < rounds; loop++)
-                {
-                    var results = pruningRadixTrie.GetTopkTermsForPrefix(queryString.Substring(0, i + 1), 10, out long termFrequencyCountPrefix, true);
-                    //foreach ((string term,long termFrequencyCount) in results) Console.WriteLine(term+" "+termFrequencyCount.ToString("N0"));
-                }
-                sw.Stop();
-                long time2 = sw.ElapsedMilliseconds;
-                Console.WriteLine("pruning search " + queryString.Substring(0, i + 1) + " in " + ((double)time2 / (double)rounds).ToString("N6") + " ms");
-                
-
-                Console.WriteLine(((double)time1 / (double)time2).ToString("N2") + " x faster");
-            }
-
-            Console.WriteLine("press key to exit.");
-            Console.ReadKey();
+            termsTestTrie.ReadTermsFromFile("terms.txt");
         }
 
+        [Benchmark(Baseline = true)]
+        public List<(string, long)> RegularRadixTrie() => termsTestTrie.GetTopkTermsForPrefix(queryString.Substring(0, SubstringLength), 10, out long termFrequencyCountPrefix, false);
 
+
+        [Benchmark]
+        public List<(string, long)> PrefixRadixTrie() => termsTestTrie.GetTopkTermsForPrefix(queryString.Substring(0, SubstringLength), 10, out long termFrequencyCountPrefix, true);
+    }
+    class Program
+    {
         static void Main(string[] args)
         {
-            Benchmark();      
+            // Use this for debugging benchmarks.
+            // BenchmarkSwitcher.FromAssembly(typeof(Program).Assembly).Run(args, new DebugInProcessConfig());
+            BenchmarkRunner.Run<RegularRadixTrieVsPrefixTrie>();
         }
     }
 }
